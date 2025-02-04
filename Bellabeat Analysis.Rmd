@@ -1,0 +1,223 @@
+---
+title: "Bellabeat Analysis and Report"
+output:
+  html_document:
+    df_print: paged
+date: "2025-02-3"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+library(EnvStats)
+library(tidyverse)
+library(lubridate)
+```
+
+### Business Task
+
+Bellabeat has requested an analysis regarding the usage of non-bellabeat smart devices in order to gain insights about the consumer base.
+
+
+### Data Used
+
+```{r}
+dailyActivity_merged <- read.csv("dailyActivity_merged.csv")
+sleepDay_merged <- read.csv("sleepDay_merged.csv")
+dailyIntensities_merged <-read.csv("dailyIntensities_merged.csv")
+hourlyIntensities_merged <- read.csv("hourlyIntensities_merged.csv")
+```
+
+
+The data used in this analysis comprised of the FitBit Fitness Tracker Data provided by Mobius. Tables used from the original dataset included the dailyActivity_merged, sleepDay_merged and the hourlyIntensities_merged. Copies with added columns were made in order to make deriving insights easier.
+
+### Data Cleaning and Manipulation
+
+Exploratory analysis of the data as well as reviews of the data on Kaggle provided an understanding that the data was clean. However, for safety sake, I used drop_na() frequently to account for any missing values.
+
+Other manipulation of the data included merging the sleepDay_Day_merged table with the daily_activity_merged table. This allowed us to check for any relationships between sleep and activity
+
+I also mutated ActivityDate, SleepDay and ActivityHour columns from the dailyActivity_merged, sleepDay_merged and the hourlyIntensities_merged tables respectively, in order to perform the aforementioned merge as well as for aggregation operations that required different information from those columns such as just the day (to groupby the day) or just the hour (to groupby the hour). 
+
+### Summary of Analysis
+
+Much of my analysis was spent exploring the data for any possible relationships. I will lean into the insights generated from the clear relationships shown. I began my analysis with some simple summary statistics to have an understanding of the data and the activity trends of consumers in the dataset.I then generated some graphs to see how some relationships that would seem obvious actually was represented in the data.
+
+I then went deeper, adding columns and merging the sleepdata and activities data to search for the presence of relationships between sleep and activity. I ended my analysis with 4 questions that I hoped would drive some final insights for Bellabeat.
+
+### Analysis Report with Recommendations
+
+
+#### I. EXPLORATION
+
+##### i. Exploratory Summary Statistics
+
+```{r}
+n_distinct(dailyActivity_merged$Id)
+n_distinct(sleepDay_merged$Id)
+nrow(dailyActivity_merged)
+nrow(sleepDay_merged)
+
+dailyActivity_merged %>% select(TotalSteps,TotalDistance,SedentaryMinutes) %>% summary()
+
+sleepDay_merged %>% select(TotalSleepRecords,TotalMinutesAsleep,TotalTimeInBed) %>%  summary()
+
+```
+The mean totalsteps for this dataset is 7638 per day. This is quite low as the CDC recommends 8000 to 10000 a day for adults under 60. The average time sedentary is 16.52 hours. Just these few statistics show the low average amount of activity taking place in the dataset.
+
+
+##### ii. Exploratory Data Visualizations
+
+a. TotalMinutesAsleep and TotalMinutesinBed from the sleepDay data.
+
+```{r}
+ggplot(data=sleepDay_merged, aes(x=TotalMinutesAsleep, y=TotalTimeInBed)) + geom_point() + labs(title= "Total Time in Bed vs. Total Minutes Asleep")
+```
+
+This Data made practical sense and highlights the many users who spend a significant amount of time in bed without sleeping. 
+
+b. SedentaryMinutes and TotalSteps from the dailyActivity data.
+```{r}
+ggplot(data=dailyActivity_merged, aes(x=TotalSteps,y=SedentaryMinutes)) + geom_point() + labs(title= "Sedentary Minutes vs.Total Steps")
+```
+
+Surprisingly, there was not a clear trend between Sedentary Minutes and Total Steps.
+
+
+#### II. DEEPER ANALYSIS
+
+##### i. Total Minutes Active
+
+To go further in my analysis, I thought it would be helpful to add to the dailyActivity table by combining the LightlyActive,FairlyActive and VeryActive columns into a single total_minutes_active column. This would allow for an easy measurement of activity to analyse.
+
+```{r}
+new_daily_activities <- dailyActivity_merged %>% mutate(total_minutes_active = LightlyActiveMinutes+FairlyActiveMinutes+VeryActiveMinutes)
+```
+
+
+Here is a summary and histogram of total_minutes_active
+
+```{r}
+summary(new_daily_activities$total_minutes_active)
+hist(new_daily_activities$total_minutes_active, probability = TRUE)
+```
+The mean amount of time being active is 227.5 minutes which is 3.79 hours. These seems like an encouraging number, however it is not clear how that data is spread, as total minutes included, light, fair and very active minutes. 
+
+The next plot will show how activity is distributed between these categories and compare it to sedentary activity as well. I took the means of each of the activity categories and plotted them to see the average amount of time spent on each category across the dataset.
+
+
+```{r}
+activity_spread_mean <- data.table::copy(new_daily_activities) %>% select('SedentaryMinutes', 'LightlyActiveMinutes', 'FairlyActiveMinutes', 'VeryActiveMinutes','VeryActiveMinutes') %>% summarize(mean_sedentary = mean(SedentaryMinutes), mean_lightly_active = mean(LightlyActiveMinutes), mean_fairly_active = mean(FairlyActiveMinutes), mean_very_active = mean(VeryActiveMinutes))
+
+activity_spread_mean <- pivot_longer(activity_spread_mean, cols=c('mean_sedentary', 'mean_lightly_active', 'mean_fairly_active', 'mean_very_active'), names_to = c('types_of_activity'), values_to = 'time_in_minutes')
+
+ggplot(data=activity_spread_mean, aes(x=types_of_activity, y= time_in_minutes, fill = types_of_activity)) + geom_col()
+
+print(activity_spread_mean)
+
+```
+Most of the activity spent with reference to the total_minutes_active, would be spent on light activity, then very intense, then fairly intense activity. Sedentary activity takes up most of the time on average.
+
+##### ii. Sleep Data with Activity Data
+
+The next step of the analysis was to merge sleep data with the new_daily_activities table in order to find any relationships between sleep and activity.
+
+```{r}
+sleepDay_date <- data.table::copy(sleepDay_merged) %>% mutate(new_date = mdy_hms(SleepDay))
+
+new_daily_activities_date <- data.table::copy(new_daily_activities) %>% mutate(new_date = mdy(ActivityDate))
+
+
+combined_data <- merge(sleepDay_date, new_daily_activities_date, by= c("Id","new_date")) %>% select(-SleepDay,-ActivityDate)
+```
+
+
+After various checks for relationships between TotalTimeAsleep and the following: TotalSteps, total_minutes_active, LightlyActiveMinutes, FairlyActiveMinutes and VeryActiveMinutes, there was found to be no relationship between sleep and activity, except for the final attempt:
+
+TotalMinutesAsleep and SedentaryActivity.
+
+```{r}
+ggplot(data=combined_data, aes(x=TotalMinutesAsleep,y=SedentaryMinutes)) + geom_point(color = "black") + geom_smooth() + labs(title = "Sedentary Minutes Vs. Total Minutes Asleep") 
+
+```
+The downward trend of the data suggests that more sleep correlates with less sedentary activity. 
+
+
+
+#### III. Final Driving Questions
+To complete my analysis, I posed some final questions in search for trends and provide recommendations:
+
+i) What does the distribution of sleep look like?
+ii) What days are the most/least active on average, for most people?
+iii) What times of day are most/least active?
+iv) What days have the most/least sleep?
+
+##### i) What does the distribution of sleep look like?
+```{r}
+hours_sleep <- select(combined_data, 'Id','TotalMinutesAsleep') %>% mutate(TotalHoursAsleep = TotalMinutesAsleep/60) 
+ggplot(data=hours_sleep, aes(x=TotalHoursAsleep)) + geom_histogram(fill = "pink") 
+```
+```{r}
+summary(hours_sleep$TotalHoursAsleep)
+```
+The average amount of sleep is 6.99. Most of the data is falling between the 6.017 and 8.17 hours of sleep. 
+
+
+##### ii) What days are the most/least active on average, for most people?
+```{r}
+mutated_int_days <- data.table::copy(hourlyIntensities_merged) %>% mutate(Day = mdy_hms(ActivityHour) %>% weekdays()) %>% group_by(Day) %>% drop_na() %>% summarise(mean_total_intensity = mean(TotalIntensity))
+
+ggplot(data = mutated_int_days, aes(x=Day, y=mean_total_intensity)) + geom_histogram(stat = "identity", fill = "pink") + theme(axis.text.x = element_text(angle = 0)) + labs(title = "Average Total Intensity vs. WeekDay" )
+
+```
+Tuesday and Saturday were on average the most active while Sundays and Wednesdays were the least active.
+
+##### ii) What times of day are most/least active?
+
+I grouped the intensity data by times of day, finding the means from each hour. Then I compared each mean to the total mean of the data for intensity.
+```{r}
+mutated_int_hours <- data.table::copy(hourlyIntensities_merged) %>% mutate(Time = mdy_hms(ActivityHour) %>% hour()) %>% group_by(Time) %>%  drop_na() %>% summarise(mean_total_intensity = mean(TotalIntensity))
+
+summary(hourlyIntensities_merged$TotalIntensity)
+
+ggplot(data = mutated_int_hours, aes(x=Time, y=mean_total_intensity)) + geom_histogram(stat = "identity", fill = "pink") + theme(axis.text.x = element_text(angle = 0)) + labs(title = "Average Total Intensity vs. Time" ) + geom_abline(slope = 0, intercept = 12.04) + annotate("text", x= 3.7, y= 13.04, label = "mean intensity from the full dataset", size= 4)
+
+```
+Opportunities for increased physical activity can be early in the morning such as from 4-8, or at night from 7-9. 
+
+##### iv) What days have the most/least sleep?
+```{r}
+mutated_int_sleep <- data.table::copy(combined_data) %>% mutate(Day = weekdays(new_date), TotalHoursAsleep = TotalMinutesAsleep/60) %>% group_by(Day)  %>% drop_na() %>% summarise(mean_hours_sleep = mean(TotalHoursAsleep))
+
+print(mutated_int_sleep)
+
+ggplot(data = mutated_int_sleep, aes(x=Day, y=mean_hours_sleep)) + geom_histogram(stat = "identity", fill = "pink") + theme(axis.text.x = element_text(angle = 0)) + labs(title = "Average Total Sleep vs. WeekDay" )
+
+```
+
+Monday, Tuesday, Thursday and Friday stick out with the lowest amounts of sleep on average. The average amounts of sleep on these days are all under 7 hours, the recommended minimum amount of sleep by the CDC.
+
+Wednesday and Sunday bave the highest amounts of sleep. This may be because Wednesdays are the middle of the week, hence consumers are tired from the first 3 days of work and Sundays are usually spent watching sports or resting after activities like church and other family gatherings.
+
+
+#### IV. Final Conclusion and Recommendations
+
+
+##### Conclusion
+
+The low average of footsteps below the 3rd quartile of totalsteps indicated more activity would be needed by most people on the dataset. After looking at the spread of activity, most of time spent in the data is on sedentary activity, then light, then very, then fairly intense activity. There is a lack of meaningful exercise. In fact a lack of any exercise across the dataset compared to sedentary activity. The people in the upper 25% of the data are quite active but the lower 75% need some help. 
+
+The following recommends can be implemented to the Bellabeat membership in conjunction with the Lead or the Time in order to drive results towards users goals.
+
+
+##### Recommendations:
+
+* Since less sedentary activity is correlated with more sleep, according to our graph, Bellabeat can implement daily reminders for more sleep throught the app or through the Spring/Time. It can tailor the reminders to the days where the users are on average, under the recommended amount of 7 hours.
+
+* There can be specific reminders to work out on Wednesdays and Sundays where it seems like most people have less activity. 
+
+* Finally, Bellabeat can provide insights to users about their weekly activity and offer suggestions for meeting weekly, monthy and yearly goals. Since the hours of 4-8, and 7-9 seem to be low on activity, Bellabeat can offer potential times in those ranges for users to implement an hour long intense workout. If users are older, having a fairly active or even a light walk/jog could be recommended instead. This would increase the amount of active minutes for each user. 
+
+
+#### Thank you for reviewing my report
